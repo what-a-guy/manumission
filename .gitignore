@@ -1,4 +1,9 @@
 *~
 *.o
+.afile
 manumission
 sample.chm
+contents.hhc
+contents.txt
+index.hhk
+index.txt
