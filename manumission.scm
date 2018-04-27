@@ -51,7 +51,7 @@
   (main main))
 
 (define *program* "manumission")
-(define *version* "0.4.1")
+(define *version* "0.4.2")
 
 ;; These globals are place-holders for work that's pending.  Each
 ;; will need to either be computed or read from config info.
@@ -375,10 +375,10 @@
 	   (dword *quickref-density*)
 	   (dword (if (null? index-chunks) 1 2))
 	   (if (null? index-chunks) minus1 (dword (length dir-listings)))
-	   (dword (- (length index-chunks) 1))  ; first pgml
-	   (dword (+ (length index-chunks)
+	   zero            ; first pgml
+	   (dword (max 0 (+ (length index-chunks)
 		     (length dir-listings)
-		     -2))                       ; last pgml
+		     -2)))       ; last pgml
 	   minus1
 	   (dword (+ (length index-chunks) (length dir-listings)))
 	   (dword *windows-language-id*)

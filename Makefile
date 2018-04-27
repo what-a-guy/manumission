@@ -6,9 +6,7 @@ BGFLAGS=-g2
 SAMPLES:=$(shell dir sample)
 SAMPLE_FILES:=${SAMPLES:%=sample/%}
 all: .afile ${PROG}
-	./${PROG} -i out
-	xchm out.chm
-	#./${PROG} -i sample -o sample.chm -d index.html
+	./${PROG} -i sample -o sample.chm -d index.html
 
 ${PROG}: ${OBJS}
 	bigloo ${BGFLAGS} -o $@ $^
