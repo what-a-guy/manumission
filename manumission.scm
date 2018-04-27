@@ -45,6 +45,9 @@
 ;;; configuration duties.  We load the 'in-dir' files as pages,
 ;;; and look for the special names "contents.hhc" and "index.hhk"
 ;;; to determine the contents and index pages.
+;;; Starting in v0.4, we generate these 2 files using "contents.txt" 
+;;; and "index.txt", which are in a form which is much easier to edit.
+;;; We also can generate these txt files from the 'in-dir' html files.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (module manumission
