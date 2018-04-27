@@ -5,7 +5,7 @@ Microsoft HTML Help files provide a convenient, cross-platform method for displa
 
 Manumission creates chm files using html which you provide. In addition, it now creates default contents and index files (which appear in the Contents and Index tabs of the Help viewer).
 
-Currently, Manumission's output is uncompressed only. Also, it assumes only 1 listing chunk, which limits the number of html pages which can be included.
+Currently, Manumission's output is uncompressed only.
 
 ## Installation
 You'll need [Bigloo Scheme](https://www-sop.inria.fr/mimosa/fp/Bigloo/) to compile Manumission.
