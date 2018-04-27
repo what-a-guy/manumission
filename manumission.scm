@@ -51,13 +51,12 @@
   (main main))
 
 (define *program* "manumission")
-(define *version* "0.4")
+(define *version* "0.4.1")
 
 ;; These globals are place-holders for work that's pending.  Each
 ;; will need to either be computed or read from config info.
 
 (define *compatibility* 1.1)       ; 1.1 or later
-(define *index-tree-depth* 1)      ; depth of index tree (1=no index, 2=one level of PMGI chunks
 (define *quickref-density* 2)      ; normally 2
 (define *directory-chunk-size* #x1000)  ; always?
 (define *windows-language-id* 1033)
@@ -375,13 +374,13 @@
 	   (dword *directory-chunk-size*)
 	   (dword *quickref-density*)
 	   (dword (if (null? index-chunks) 1 2))
-	   (if (null? index-chunks) minus1 zero)
-	   (dword (length index-chunks))
+	   (if (null? index-chunks) minus1 (dword (length dir-listings)))
+	   (dword (- (length index-chunks) 1))  ; first pgml
 	   (dword (+ (length index-chunks)
 		     (length dir-listings)
-		     -1))
+		     -2))                       ; last pgml
 	   minus1
-	   (dword (length dir-listings))
+	   (dword (+ (length index-chunks) (length dir-listings)))
 	   (dword *windows-language-id*)
 	   (guid "{5D02926A-212E-11D0-9DF9-00A0-C922-E6EC}")
 	   (dword #x54)    ; length of directory header
@@ -391,19 +390,8 @@
    (apply
     string-append 
     (append
-     index-chunks
-     (map car dir-listings)))))
-
-;; returns a single directory entry
-;; name is a string
-(define (make-entry name section-num offset len)
-  ;;(printf "make-entry ~s ~s ~s ~s\n" name section-num offset len)
-  (string-append
-   (encint (string-length name))
-   (utf-8 name)
-   (encint section-num)
-   (encint offset)
-   (encint len)))
+     (map car dir-listings)
+     index-chunks))))
 
 ;; returns a list of quickref entries
 ;; 1 entry for every fifth file
@@ -432,19 +420,58 @@
 ;; which is filename, content-section-number, offset in content
 ;; section.
 ;; returns a list of
-;; (list chunk first-name)
+;; (chunk count first-name)
 ;; where chunk is the listing-chunk string, 
-;; and first-name is the name of it's first entry
+;; and first-name is the name of its first entry
 ;; (used when building an index chunk).
+;; count is ignored in return.
 (define (listing-chunks f-list)
   ;;(hex-dump (caddr (assoc "::DataSpace/NameList" f-list)))
   (let loop ((lst f-list)
+	     (chunk-num 0)
 	     (acc '()))
     (if (null? lst)
 	(reverse acc)
-	(let* ((chunk (make-listing-chunk lst))
+	(let* ((chunk (make-listing-chunk chunk-num lst))
 	       (remaining (drop lst (cadr chunk))))
-	  (loop remaining (cons chunk acc))))))
+	  (loop remaining (+ chunk-num 1) (cons chunk acc))))))
+
+;; dir-chunks is list returned by listing-chunks above
+;; here we index the listing-chunks, but only if there's more
+;; than 1.
+(define (indexing-chunk dir-chunks)
+  (define (make-entry e dir-num)
+    (let ((nm (caddr e)))
+      (string-append
+	(encint (string-length nm))
+	(utf-8 nm)
+	(encint dir-num))))
+  (if (= (length dir-chunks) 1)
+    '()
+    (let loop ((lst dir-chunks)
+	       (count 0)
+	       (free-space (- *directory-chunk-size* 8))
+	       (acc '()))
+      (if (null? lst)
+	(let* ((quicks (map word (quickref acc)))
+	       (free-space (- *directory-chunk-size*
+			      8   ; offset of first entry in the chunk
+			      (byte-list-total acc)))
+	       (padding-len (- free-space (byte-list-total quicks))))
+	  (list
+	    (string-append
+	      (apply
+		string-append
+		"PMGI"
+		(dword free-space)
+		(reverse acc))
+	      (make-string padding-len)
+	      (apply string-append quicks))))
+	(let ((e (make-entry (car lst) count)))
+	  (loop (cdr lst)
+		(+ 1 count)
+		(- free-space (string-length e))
+		(cons e acc)))))))
 
 ;; bytes used by current quickref area:
 (define (quick-space entries)
@@ -459,35 +486,46 @@
 ;; (chunk count first-name)
 ;; where count is the number of names used
 ;; and first-name the first entry in the chunk
-(define (make-listing-chunk f-list)
+(define (make-listing-chunk chunk-num f-list)
+  (define last-chunk (- (length f-list) 1))
   ;;(printf "f-list:\n") (pp f-list)
+  ;; returns a single directory entry
+  ;; name is a string
+  (define (make-entry name section-num offset len)
+    ;;(printf "make-entry ~s ~s ~s ~s\n" name section-num offset len)
+    (string-append
+      (encint (string-length name))
+      (utf-8 name)
+      (encint section-num)
+      (encint offset)
+      (encint len)))
   (let loop ((lst f-list)
 	     (count 0)
 	     (offset 0)
 	     (first-name #f)
 	     (entries '()))
+    ;;(fprintf (current-error-port) "chunk-num: ~s count: ~s\n" chunk-num count)
     (if (null? lst)
 	(let* ((quicks (map word (quickref entries)))
 	       (free-space (- *directory-chunk-size*
 			      #x14   ; offset of first entry in the chunk
 			      (byte-list-total entries)))
 	       (padding-len (- free-space (byte-list-total quicks))))
-          ;;(printf "quicks: ") (for-each hex-dump quicks)
 	  (list
-	   (string-append
-	    "PMGL"
-	    (dword free-space)  ; Length of free space and/or quickref area at end of directory chunk
-	    zero
-	    minus1  ; chunk number of previous listing-chunk!!!
-	    minus1  ; chunk number of next listing-chunk!!!
-	    (apply string-append (reverse entries))
-	    (make-string padding-len)
-	    (apply string-append quicks))
-	   count
-	   (ignore-/ first-name)))
+	    (string-append
+	      "PMGL"
+	      (dword free-space)  ; Length of free space and/or quickref area at end of directory chunk
+	      zero
+	      (if (= chunk-num 0) minus1 (dword chunk-num))  ; prev chunk
+	      (if (>= count (length f-list)) minus1 (dword (+ chunk-num 1)))  ; next chunk
+	      (apply string-append (reverse entries))
+	      (make-string padding-len)
+	      (apply string-append quicks))
+	    count
+	    first-name))
 	(let* ((item (car lst))
 	       (entry (make-entry (car item) (cadr item) (cadddr item) (list-ref item 4)))
-	       (name (ignore-/ (caar lst)))
+	       (name (caar lst))
 	       (free-space (- *directory-chunk-size*
 			      #x14   ; offset of first entry in the chunk
 			      (byte-list-total entries))))
@@ -498,7 +536,7 @@
 	    (loop (cdr lst)
 		  (+ count 1)
 		  (+ offset (string-length entry))
-		  (if first-name first-name  name)
+		  (if first-name first-name name)
 		  (cons entry entries)))
 	   (else (loop '() count offset first-name entries)))))))
 
@@ -971,13 +1009,12 @@
 				   (map topic-data sorted-list))))
 	     (cont-1-data (lzx-data))
 	     (dir-listings (listing-chunks content-listing))
-	     (index-chunk-list '())
-	     (filesize (+ (string-length (header index-chunk-list dir-listings 0))
+	     (index-chunk-list (indexing-chunk dir-listings))
+	     (filesize (+ (string-length (header index-chunk-list dir-listings 0))  ; must call header twice (don't know filesize yet)
 			  (string-length cont-0-data) (string-length cont-1-data))))
-	;;(printf "sorted: ~a\n" (map topic-name sorted-list))
-	;;(hex-dump (topic-data (car (reverse sorted-list))))
-	(with-output-to-file out-path
-			     (lambda ()
-			       (display (header index-chunk-list dir-listings filesize))
-			       (display cont-0-data)
-			       (display cont-1-data)))))))
+	(with-output-to-file
+	  out-path
+	  (lambda ()
+	    (display (header index-chunk-list dir-listings filesize))
+	    (display cont-0-data)
+	    (display cont-1-data)))))))
